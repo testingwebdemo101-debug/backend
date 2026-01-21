@@ -5,6 +5,8 @@ const welcomeEmailTemplate = require("../utils/welcomeEmailTemplate");
 const passwordResetEmailTemplate = require("../utils/passwordResetEmailTemplate");
 const jwt = require("jsonwebtoken");
 const crypto = require('crypto');
+const sendZeptoTemplateMail = require("../utils/zeptomail.service");
+
 
 /* ===============================
    TOKEN GENERATOR
@@ -83,204 +85,273 @@ exports.getStarted = async (req, res, next) => {
    REGISTER
 ================================ */
 exports.register = async (req, res, next) => {
-    try {
-        const { fullName, email, password, country, referralCode: referredBy } = req.body;
+  try {
+    const { fullName, email, password, country, referralCode: referredBy } = req.body;
 
-        // Check if user already exists
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({
-                success: false,
-                error: "User already exists",
-            });
-        }
-
-        // Generate wallet addresses
-        const walletAddresses = generateWalletAddresses();
-
-        // Generate referral code for the new user
-        const referralCode = generateReferralCode();
-// Create user (walletBalances will default to 0 from schema)
-const user = await User.create({
-    fullName,
-    email,
-    password,
-    country,
-    referralCode,
-    referredBy,
-    walletAddresses
-});
-
-
-        // Generate OTP
-        const otp = user.generateVerificationCode();
-        await user.save();
-
-        // Send OTP email
-        const emailData = otpEmailTemplate(otp);
-
-        await sendEmail({
-            email: user.email,
-            subject: "OTP for Email Verification",
-            html: emailData.html,
-            attachments: emailData.attachments,
-        });
-
-        res.status(201).json({
-            success: true,
-            message: "OTP sent to email",
-            data: {
-                userId: user._id,
-                email: user.email,
-                fullName: user.fullName
-            }
-        });
-    } catch (error) {
-        next(error);
+    // 1️⃣ User exists check
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        error: "User already exists",
+      });
     }
+
+    // 2️⃣ Create user (not verified)
+    const user = await User.create({
+      fullName,
+      email,
+      password,
+      country,
+      referralCode: generateReferralCode(),
+      referredBy,
+      walletAddresses: generateWalletAddresses(),
+      isVerified: false,
+    });
+
+    // 3️⃣ Generate OTP (same pattern as forgot)
+    const otp = user.generateVerificationCode();
+    await user.save();
+
+    // 4️⃣ Send OTP via ZeptoMail
+    await sendZeptoTemplateMail({
+      to: user.email,
+      templateKey: process.env.TPL_VERIFY_OTP,
+      mergeInfo: {
+        otp,
+        expiry: "5",
+        name: user.fullName,
+      },
+    });
+
+    // 5️⃣ Response
+    res.status(201).json({
+      success: true,
+      message: "Verification code sent to your email",
+      data: {
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
+
 
 /* ===============================
    VERIFY EMAIL
 ================================ */
-exports.verifyEmail = async (req, res, next) => {
-    try {
-        const { email, verificationCode } = req.body;
+exports.verifyEmail = async (req, res) => {
+  try {
+    console.log("VERIFY EMAIL HIT:", req.body);
 
-        // Hash the verification code
-        const hashedVerificationCode = crypto
-            .createHash('sha256')
-            .update(verificationCode)
-            .digest('hex');
+    const { email, verificationCode } = req.body;
 
-        const user = await User.findOne({
-            email,
-            verificationCode: hashedVerificationCode,
-            verificationCodeExpire: { $gt: Date.now() },
-        });
+    const hashedVerificationCode = crypto
+      .createHash("sha256")
+      .update(String(verificationCode).trim())
+      .digest("hex");
 
-        if (!user) {
-            return res.status(400).json({
-                success: false,
-                error: "Invalid or expired OTP",
-            });
-        }
+    const user = await User.findOne({
+      email,
+      verificationCode: hashedVerificationCode,
+      verificationCodeExpire: { $gt: Date.now() },
+    });
 
-        user.isVerified = true;
-        user.verificationCode = undefined;
-        user.verificationCodeExpire = undefined;
-        await user.save();
-
-        // Send welcome email
-        const welcomeData = welcomeEmailTemplate(user.fullName);
-
-        await sendEmail({
-            email: user.email,
-            subject: "Welcome to InstaCoinXPay",
-            html: welcomeData.html,
-            attachments: welcomeData.attachments,
-        });
-
-        // Generate token
-        const token = generateToken(user._id);
-
-        res.status(200).json({
-            success: true,
-            token,
-            data: {
-                id: user._id,
-                name: user.fullName,
-                email: user.email,
-                role: user.role,
-                isVerified: user.isVerified,
-                walletAddresses: user.walletAddresses,
-                walletBalances: user.walletBalances
-            }
-        });
-    } catch (error) {
-        next(error);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid or expired OTP",
+      });
     }
+
+    // ✅ MARK VERIFIED
+    user.isVerified = true;
+    user.verificationCode = undefined;
+    user.verificationCodeExpire = undefined;
+    await user.save();
+
+    // ✅ SEND WELCOME MAIL (ONLY AFTER VERIFY)
+    await sendZeptoTemplateMail({
+      to: user.email,
+      templateKey: process.env.TPL_WELCOME,
+      mergeInfo: {
+        name: user.fullName,
+      },
+    });
+
+    // ✅ LOGIN TOKEN
+    const token = generateToken(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: "Email verified successfully",
+      token,
+      data: {
+        id: user._id,
+        name: user.fullName,
+        email: user.email,
+        isVerified: true,
+      },
+    });
+  } catch (error) {
+    console.error("VERIFY EMAIL ERROR 🔴", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Internal Server Error",
+    });
+  }
 };
+
+
+
 
 /* ===============================
    RESEND VERIFICATION
 ================================ */
 exports.resendVerification = async (req, res) => {
-    try {
-        const { email } = req.body;
+  try {
+    const { email } = req.body;
 
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                error: "User not found",
-            });
-        }
-
-        // Generate new OTP
-        const otp = user.generateVerificationCode();
-        await user.save();
-
-        // Send OTP email
-        const emailData = otpEmailTemplate(otp);
-
-        await sendEmail({
-            email: user.email,
-            subject: "Email Verification - InstaCoinXPay",
-            html: emailData.html,
-            attachments: emailData.attachments,
-        });
-
-        res.status(200).json({
-            success: true,
-            message: "Verification code resent successfully",
-        });
-    } catch (error) {
-        console.error("Resend verification error:", error);
-        res.status(500).json({
-            success: false,
-            error: "Failed to resend verification code",
-        });
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
     }
+
+    const otp = user.generateVerificationCode();
+    await user.save();
+
+    await sendZeptoTemplateMail({
+      to: user.email,
+      templateKey: process.env.TPL_VERIFY_OTP,
+      mergeInfo: {
+        otp,
+        expiry: "5",
+        name: user.fullName,
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Verification code resent successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to resend verification code",
+    });
+  }
 };
+
 
 /* ===============================
    FORGOT PASSWORD
 ================================ */
 exports.forgotPassword = async (req, res, next) => {
-    try {
-        const { email } = req.body;
+  try {
+    console.log("FORGOT PASSWORD HIT");
+    console.log("EMAIL:", req.body.email);
 
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                error: "User with this email does not exist",
-            });
-        }
+    const { email } = req.body;
 
-        // Generate reset code
-        const resetCode = user.generateResetPasswordToken();
-        await user.save();
+    const user = await User.findOne({ email });
+    console.log("USER FOUND:", !!user);
 
-        // Send reset email
-        const emailData = passwordResetEmailTemplate(resetCode);
-
-        await sendEmail({
-            email: user.email,
-            subject: "Password Reset Code - InstaCoinXPay",
-            html: emailData.html,
-            attachments: emailData.attachments,
-        });
-
-        res.status(200).json({
-            success: true,
-            message: "Password reset code sent to your email",
-        });
-    } catch (error) {
-        next(error);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User with this email does not exist",
+      });
     }
+
+    const resetCode = user.generateResetPasswordToken();
+    console.log("RESET CODE GENERATED:", resetCode);
+
+    await user.save();
+    console.log("USER SAVED");
+
+    // 👇 THIS IS MOST LIKELY FAILING
+    await sendZeptoTemplateMail({
+      to: user.email,
+      templateKey: process.env.TPL_FORGOT_OTP,
+      mergeInfo: {
+        otp: resetCode,
+        expiry: "5",
+      },
+    });
+
+    console.log("EMAIL SENT");
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset code sent to your email",
+    });
+  } catch (error) {
+    console.error("FORGOT PASSWORD ERROR 🔴", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+    });
+  }
 };
+
+
+/* ===============================
+   RESEND FORGOT PASSWORD OTP
+================================ */
+exports.resendForgotPasswordOTP = async (req, res) => {
+  try {
+    console.log("RESEND FORGOT OTP HIT");
+
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "Email is required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    // 🔁 Generate NEW reset code (overwrite old)
+    const resetCode = user.generateResetPasswordToken();
+    await user.save();
+
+    // 📧 Send via ZeptoMail (RESEND TEMPLATE)
+    await sendZeptoTemplateMail({
+      to: user.email,
+      templateKey: process.env.TPL_FORGOT_RESEND_OTP,
+      mergeInfo: {
+        otp: resetCode,
+        expiry: "5",
+        name: user.fullName || "User",
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Reset code resent successfully",
+    });
+  } catch (error) {
+    console.error("RESEND FORGOT OTP ERROR 🔴", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to resend reset code",
+    });
+  }
+};
+
 
 /* ===============================
    VERIFY RESET CODE
@@ -316,55 +387,132 @@ exports.verifyResetCode = async (req, res, next) => {
         next(error);
     }
 };
-
 /* ===============================
    RESET PASSWORD
 ================================ */
 exports.resetPassword = async (req, res, next) => {
-    try {
-        const { email, resetCode, newPassword } = req.body;
+  console.log("RESET PASSWORD HIT");
 
-        // Hash the reset code
-        const hashedResetCode = crypto
-            .createHash('sha256')
-            .update(resetCode)
-            .digest('hex');
+  try {
+    const { email, resetCode, newPassword } = req.body;
 
-        const user = await User.findOne({
-            email,
-            resetPasswordToken: hashedResetCode,
-            resetPasswordExpire: { $gt: Date.now() },
-        }).select("+password");
-
-        if (!user) {
-            return res.status(400).json({
-                success: false,
-                error: "Invalid or expired reset code",
-            });
-        }
-
-        // Check if new password is same as old password
-        const isSame = await user.matchPassword(newPassword);
-        if (isSame) {
-            return res.status(400).json({
-                success: false,
-                error: "New password must be different from old password",
-            });
-        }
-
-        user.password = newPassword;
-        user.resetPasswordToken = undefined;
-        user.resetPasswordExpire = undefined;
-        await user.save();
-
-        res.status(200).json({
-            success: true,
-            message: "Password reset successfully",
-        });
-    } catch (error) {
-        next(error);
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: "Password must be at least 6 characters",
+      });
     }
+
+    const hashedResetCode = crypto
+      .createHash("sha256")
+      .update(String(resetCode))
+      .digest("hex");
+
+    const user = await User.findOne({
+      email,
+      resetPasswordToken: hashedResetCode,
+      resetPasswordExpire: { $gt: Date.now() },
+    }).select("+password");
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid or expired reset code",
+      });
+    }
+
+    const isSamePassword = await user.matchPassword(newPassword);
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        error: "New password must be different from old password",
+      });
+    }
+
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+
+    try {
+      console.log("📧 Sending password reset success email to:", user.email);
+
+      await sendZeptoTemplateMail({
+        to: user.email,
+        templateKey: process.env.TPL_CONFIRM_RESET_PASSWORD,
+        mergeInfo: {
+          name: user.fullName || "User",
+          team: "InstaCoinXPay",
+        },
+      });
+
+      console.log("✅ Password reset success email sent");
+    } catch (mailError) {
+      console.error("❌ Password reset email failed:", mailError.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset successfully",
+    });
+  } catch (error) {
+    console.error("RESET PASSWORD ERROR 🔴", error);
+    next(error);
+  }
 };
+
+
+// ===============================
+// SEND PASSWORD RESET SUCCESS MAIL (OPTIONAL API)
+// ===============================
+exports.sendPasswordResetSuccessMail = async (req, res) => {
+  console.log("📩 SEND PASSWORD RESET SUCCESS MAIL HIT");
+
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "Email is required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    await sendZeptoTemplateMail({
+      to: user.email,
+      templateKey: process.env.TPL_CONFIRM_RESET_PASSWORD,
+      mergeInfo: {
+        name: user.fullName || "User",
+        team: "InstaCoinXPay",
+      },
+    });
+
+    console.log("✅ Password reset success email sent to:", user.email);
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset success email sent",
+    });
+  } catch (error) {
+    console.error("❌ RESET SUCCESS MAIL ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to send password reset success email",
+    });
+  }
+};
+
+
+
 
 /* ===============================
    LOGIN

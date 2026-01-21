@@ -7,10 +7,11 @@ const TransferSchema = new mongoose.Schema({
     required: true
   },
   toUser: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'User',
+  required: false
+},
+
   fromAddress: {
     type: String,
     required: true
@@ -42,7 +43,6 @@ const TransferSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['pending', 'completed', 'failed', 'cancelled'],
-    default: 'pending'
   },
   transactionId: {
     type: String,

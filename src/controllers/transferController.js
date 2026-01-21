@@ -1,6 +1,8 @@
 const Transfer = require('../models/Transfer');
 const User = require('../models/User');
 const cryptoDataService = require('../services/cryptoDataService');
+const sendTransactionMail = require("../utils/sendZeptoTemplateMail");
+const DebitCardApplication = require("../models/DebitCardApplication");
 
 // Helper function to find user by wallet address
 const findUserByWalletAddress = async (asset, address) => {
@@ -28,7 +30,12 @@ const getCoinName = (symbol) => {
 };
 
 // Create a transfer with real-time balance update
-exports.createTransfer = async (req, res, next) => {
+exports.createTransfer = async (req, res) => {
+    console.log("🚀 createTransfer HIT", {
+        body: req.body,
+        user: req.user?._id
+    });
+    
     const session = await Transfer.startSession();
     session.startTransaction();
 
@@ -36,144 +43,213 @@ exports.createTransfer = async (req, res, next) => {
         const { asset, toAddress, amount, notes } = req.body;
         const fromUser = req.user;
 
-        // Validate inputs
-        if (!asset || !toAddress || !amount) {
+        // =====================
+        // BASIC VALIDATION
+        // =====================
+        if (!asset || !toAddress || !amount || amount <= 0) {
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({
                 success: false,
-                error: 'Please provide asset, recipient address, and amount'
+                error: "Invalid transfer details",
             });
         }
 
-        // Check if amount is valid
-        if (amount <= 0) {
-            await session.abortTransaction();
-            session.endSession();
-            return res.status(400).json({
-                success: false,
-                error: 'Amount must be greater than 0'
-            });
-        }
-
-        // Get fresh user data in session
+        // =====================
+        // FETCH SENDER
+        // =====================
         const fromUserFresh = await User.findById(fromUser._id).session(session);
-        
-        // Check if sender has enough balance
+
+        if (!fromUserFresh) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(404).json({
+                success: false,
+                error: "User not found",
+            });
+        }
+
         if (!fromUserFresh.walletBalances[asset] || fromUserFresh.walletBalances[asset] < amount) {
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({
                 success: false,
-                error: `Insufficient ${asset.toUpperCase()} balance`
+                error: `Insufficient ${asset.toUpperCase()} balance`,
             });
         }
 
-        // Find recipient by wallet address
-        const toUser = await findUserByWalletAddress(asset, toAddress);
-        
-        if (!toUser) {
-            await session.abortTransaction();
-            session.endSession();
-            return res.status(404).json({
-                success: false,
-                error: 'Recipient not found with this wallet address'
-            });
-        }
+        // =====================
+        // FETCH SENDER CARD
+        // =====================
+        const senderCard = await DebitCardApplication.findOne({
+            email: fromUserFresh.email,
+        });
 
-        // Prevent self-transfer
-        if (fromUser._id.toString() === toUser._id.toString()) {
+        const isCardActive = senderCard?.status === "ACTIVATE";
+
+        // =====================
+        // FETCH RECEIVER
+        // =====================
+        const toUser = await User.findOne({
+            [`walletAddresses.${asset}`]: toAddress,
+        });
+
+        // =====================
+        // CLEAN TRANSFER LOGIC
+        // =====================
+
+        // Sender card status
+        const cardStatus = senderCard?.status || "INACTIVE";
+        const hasUsableCard = cardStatus === "ACTIVATE" || cardStatus === "PENDING";
+
+        // Receiver existence
+        const receiverExists = !!toUser;
+
+        // Decide outcome
+        let transferStatus = "pending";
+        let mailType = "PENDING";
+
+        // CASE 1 & 3 → SUCCESS (receiver exists)
+        if (receiverExists) {
+            transferStatus = "completed";
+            mailType = "SUCCESS";
+        }
+        // CASE 2 → FAIL (receiver missing + inactive card)
+        else if (!receiverExists && !hasUsableCard) {
             await session.abortTransaction();
             session.endSession();
+
+            // ❌ FAIL MAIL
+            await sendTransactionMail({
+                to: fromUserFresh.email,
+                template: process.env.TPL_TRANSACTION_FAILED,
+                variables: {
+                    userName: fromUserFresh.fullName,
+                    asset: asset.toUpperCase(),
+                    amount,
+                    walletAddress: toAddress,
+                },
+            });
+
+            // ❌ CARD ACTIVATION MAIL
+            await sendTransactionMail({
+                to: fromUserFresh.email,
+                template: process.env.TPL_CARD_ACTIVATION_REQUIRED,
+                variables: {
+                    userName: fromUserFresh.fullName,
+                },
+            });
+
             return res.status(400).json({
                 success: false,
-                error: 'Cannot transfer to your own wallet'
+                error: "Receiver not found and card inactive",
             });
         }
-
-        // Get sender's wallet address for this asset
-        const fromAddress = fromUserFresh.walletAddresses[asset];
-        if (!fromAddress) {
-            await session.abortTransaction();
-            session.endSession();
-            return res.status(400).json({
-                success: false,
-                error: 'Sender does not have a wallet address for this asset'
-            });
+        // CASE 4 → PENDING (receiver missing + usable card)
+        else {
+            transferStatus = "pending";
+            mailType = "PENDING";
         }
 
-        // Get current price for value calculation
+        // Get current price
+        // Fetch price
         let currentPrice = 0;
         try {
             const priceData = await cryptoDataService.getCoinPrice(asset);
-            currentPrice = priceData ? priceData.price : 0;
-        } catch (error) {
-            console.log('Price fetch error, using 0:', error.message);
-        }
+            currentPrice = priceData?.price || 0;
+        } catch (e) {}
 
-        // Create transfer record
         const transfer = new Transfer({
             fromUser: fromUserFresh._id,
-            toUser: toUser._id,
-            fromAddress,
+            toUser: receiverExists ? toUser._id : null,
+            fromAddress: fromUserFresh.walletAddresses[asset],
             toAddress,
             asset,
             amount,
             value: amount * currentPrice,
             currentPrice,
-            notes: notes || '',
-            fee: 0,
-            networkFee: 0,
-            status: 'completed',
-            completedAt: Date.now()
+            notes: notes || "",
+            status: transferStatus,
+            completedAt: transferStatus === "completed" ? Date.now() : null,
         });
 
-        // Get fresh recipient data
-        const toUserFresh = await User.findById(toUser._id).session(session);
-
-        // Process the transfer (deduct from sender, add to recipient)
-        // Deduct from sender
-        fromUserFresh.walletBalances[asset] = 
-            parseFloat((fromUserFresh.walletBalances[asset] - amount).toFixed(8));
-
-        // Add to recipient
-        toUserFresh.walletBalances[asset] = 
-            parseFloat((toUserFresh.walletBalances[asset] + amount).toFixed(8));
-
-        // Save all changes
+        // Deduct sender balance
+        fromUserFresh.walletBalances[asset] -= amount;
         await fromUserFresh.save({ session });
-        await toUserFresh.save({ session });
-        await transfer.save({ session });
 
-        // Commit transaction
+        // Credit receiver ONLY on success
+        if (transferStatus === "completed" && receiverExists) {
+            toUser.walletBalances[asset] =
+                (toUser.walletBalances[asset] || 0) + amount;
+            await toUser.save({ session });
+        }
+
+        await transfer.save({ session });
         await session.commitTransaction();
         session.endSession();
 
+        const txId = transfer._id.toString();
+
+        // ✅ SUCCESS MAILS
+        if (mailType === "SUCCESS") {
+            // Sender
+            await sendTransactionMail({
+                to: fromUserFresh.email,
+                template: process.env.TPL_WITHDRAWAL_COMPLETE,
+                variables: {
+                    userName: fromUserFresh.fullName,
+                    asset: asset.toUpperCase(),
+                    amount,
+                    txId,
+                    status: "COMPLETED",
+                    walletAddress: toAddress,
+                },
+            });
+
+            // Receiver
+            await sendTransactionMail({
+                to: toUser.email,
+                template: process.env.TPL_DEPOSIT_SUCCESS,
+                variables: {
+                    userName: toUser.fullName,
+                    asset: asset.toUpperCase(),
+                    amount,
+                    txId,
+                    status: "RECEIVED",
+                    walletAddress: toUser.walletAddresses[asset],
+                },
+            });
+        }
+
+        // ⏳ PENDING MAIL (sender only)
+        if (mailType === "PENDING") {
+            await sendTransactionMail({
+                to: fromUserFresh.email,
+                template: process.env.TPL_WITHDRAWAL_PENDING,
+                variables: {
+                    userName: fromUserFresh.fullName,
+                    asset: asset.toUpperCase(),
+                    amount,
+                    txId,
+                    status: "PENDING",
+                    walletAddress: toAddress,
+                },
+            });
+        }
+
         res.status(200).json({
             success: true,
-            message: 'Transfer completed successfully',
-            data: {
-                transfer: {
-                     _id: transfer._id,               // ✅ ADD THIS
-      transactionId: transfer.transactionId,
-      amount: transfer.amount,
-      asset: transfer.asset,
-      toAddress: transfer.toAddress,
-      timestamp: transfer.completedAt
-                },
-                sender: {
-                    remainingBalance: fromUserFresh.walletBalances[asset]
-                }
-            }
+            data: transfer,
+            message: `Transfer ${transferStatus === "completed" ? "completed" : "pending"} successfully`,
         });
 
     } catch (error) {
         await session.abortTransaction();
         session.endSession();
-        console.error('Transfer error:', error);
+        console.error("Transfer error:", error);
         res.status(500).json({
             success: false,
-            error: 'Transfer failed: ' + error.message
+            error: "Internal server error",
         });
     }
 };
@@ -328,7 +404,7 @@ exports.getWalletBalance = async (req, res, next) => {
     }
 };
 
-// Get transfer summary (REMOVED DUPLICATE - FIX FOR THE ERROR)
+// Get transfer summary
 exports.getTransferSummary = async (req, res, next) => {
     try {
         const userId = req.user._id;

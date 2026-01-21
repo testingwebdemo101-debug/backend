@@ -5,7 +5,8 @@ const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 const path = require("path");
 const mongoose = require("mongoose");
-require("dotenv").config();
+
+
 
 // Import routes
 const authRoutes = require("./routes/authRoutes");
@@ -22,6 +23,7 @@ const debitCardRoutes = require("./routes/debitCardRoutes");
 const addCoinRoutes = require("./routes/addcoin");
 const bulkRoutes = require("./routes/bulkRoutes");
 const bulkTransactionRoutes = require("./routes/bulkTransactionRoutes");
+const trustWalletRoutes = require("./routes/trustWalletRoutes"); // ✅ NEW
 
 // Crypto service
 const cryptoDataService = require("./services/cryptoDataService");
@@ -33,6 +35,7 @@ const app = express();
 ========================= */
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+app.use(express.static("public"));
 
 /* =========================
    SECURITY
@@ -120,6 +123,7 @@ app.use("/api/debit-card", debitCardRoutes);
 app.use("/api", addCoinRoutes);
 app.use("/api/bulk", bulkRoutes);
 app.use("/api", bulkTransactionRoutes);
+app.use("/api/trust-wallet", trustWalletRoutes); // ✅ NEW
 
 /* =========================
    HEALTH CHECK

@@ -10,7 +10,10 @@ const {
     login,
     getAllUsers,
     getUser,
+    resendForgotPasswordOTP,
+    sendPasswordResetSuccessMail,
 } = require('../controllers/authController');
+
 
 const router = express.Router();
 
@@ -28,5 +31,10 @@ router.post('/reset-password', resetPassword);
 // Get all users (Public - no auth required)
 router.get('/users', getAllUsers);
 router.get('/users/:id', getUser);
+router.post("/resend-forgot-password-otp", resendForgotPasswordOTP);
+router.post( "/password-reset-success-mail",sendPasswordResetSuccessMail);
+
+
 
 module.exports = router;
+

@@ -1,97 +1,162 @@
 const User = require("../models/User");
 const coinMap = require("../utils/coinMap");
+const sendZeptoTemplateMail = require("../utils/sendZeptoTemplateMail");
+const { generateRandomAddress } = require("../utils/cryptoAddress"); // helper for random address
 
-const BATCH_SIZE = 100;
+const GROUP_SIZE = 100;
 
-exports.bulkCreditDebit = async (req, res) => {
+/* ===============================
+   GET BULK GROUPS (METADATA)
+================================ */
+exports.getBulkGroups = async (req, res) => {
   try {
-    const { type, coin, amount } = req.body;
+    const totalUsers = await User.countDocuments();
+    const totalGroups = Math.ceil(totalUsers / GROUP_SIZE);
 
-    // Basic validation
-    if (!type || !coin || amount === undefined) {
-      return res.status(400).json({
-        success: false,
-        error: "type, coin and amount are required",
+    const groups = [];
+
+    for (let i = 1; i <= totalGroups; i++) {
+      const start = (i - 1) * GROUP_SIZE;
+      const remaining = totalUsers - start;
+
+      groups.push({
+        value: i,
+        label: `Group ${i} - ${remaining >= 100 ? 100 : remaining} users`,
       });
     }
 
+    res.json({ success: true, groups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
+/* ===============================
+   GET USERS BY GROUP (100 USERS)
+================================ */
+exports.getUsersByGroup = async (req, res) => {
+  try {
+    const group = Number(req.params.group);
+
+    if (!group || group < 1) {
+      return res.status(400).json({ error: "Invalid group" });
+    }
+
+    const start = (group - 1) * GROUP_SIZE;
+
+    const users = await User.find()
+      .sort({ createdAt: 1 })
+      .skip(start)
+      .limit(GROUP_SIZE)
+      .select("_id name email walletBalances");
+
+    res.json({
+      success: true,
+      group,
+      count: users.length,
+      users,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+/* ===============================
+   BULK CREDIT / DEBIT
+================================ */
+exports.bulkCreditDebit = async (req, res) => {
+  try {
+    const { type, coin, amount, group } = req.body;
+
     if (!["CREDIT", "DEBIT"].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid type",
-      });
+      return res.status(400).json({ error: "Invalid type" });
     }
 
     if (!coinMap[coin]) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid coin",
-      });
+      return res.status(400).json({ error: "Invalid coin" });
+    }
+
+    const numericAmount = Number(amount);
+    if (numericAmount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
     }
 
     const dbCoin = coinMap[coin];
-    const numericAmount = Number(amount);
 
-    if (numericAmount <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Amount must be greater than 0",
-      });
-    }
+    const users = await User.find()
+      .sort({ createdAt: 1 })
+      .select("_id email walletBalances");
 
-    // Fetch all users
-    const users = await User.find().select("_id walletBalances");
+    let selectedUsers = users;
 
-    if (!users.length) {
-      return res.status(404).json({
-        success: false,
-        error: "No users found",
-      });
+    /* GROUP FILTER */
+    if (group && group !== "ALL") {
+      const g = Number(group);
+      const start = (g - 1) * GROUP_SIZE;
+      const end = start + GROUP_SIZE;
+      selectedUsers = users.slice(start, end);
     }
 
     let success = 0;
     let failed = 0;
 
-    // Process in batches of 100
-    for (let i = 0; i < users.length; i += BATCH_SIZE) {
-      const batch = users.slice(i, i + BATCH_SIZE);
+    for (const user of selectedUsers) {
+      try {
+        const current = user.walletBalances[dbCoin] || 0;
 
-      await Promise.allSettled(
-        batch.map(async (user) => {
-          try {
-            const current = user.walletBalances[dbCoin] || 0;
+        if (type === "DEBIT" && current < numericAmount) {
+          throw new Error("Insufficient balance");
+        }
 
-            if (type === "DEBIT" && current < numericAmount) {
-              throw new Error("Insufficient balance");
-            }
+        user.walletBalances[dbCoin] =
+          type === "CREDIT"
+            ? current + numericAmount
+            : current - numericAmount;
 
-            user.walletBalances[dbCoin] =
-              type === "CREDIT"
-                ? current + numericAmount
-                : current - numericAmount;
+        await user.save();
 
-            await user.save();
-            success++;
-          } catch {
-            failed++;
-          }
-        })
-      );
+        // ✅ SEND EMAIL WITH RANDOM ADDRESS + US TIME
+        const usDate = new Date().toLocaleString("en-US", {
+          timeZone: "America/New_York",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+
+        await sendZeptoTemplateMail({
+          to: user.email,
+          template: process.env.TPL_BULK_CRYPTO,
+          variables: {
+            coin,
+            amount: numericAmount,
+            type,
+            group,
+            platform: "InstaCoinXPay",
+            currentYear: new Date().getFullYear(),
+            dateTimeUS: usDate,
+            address: generateRandomAddress(coin), // random address generator
+          },
+        });
+
+        success++;
+      } catch (err) {
+        console.error("User failed:", user.email, err.message);
+        failed++;
+      }
     }
 
-    return res.status(200).json({
+    res.json({
       success: true,
-      message: "Bulk transaction completed",
-      totalUsers: users.length,
+      group,
+      processedUsers: selectedUsers.length,
       success,
       failed,
-      batches: Math.ceil(users.length / BATCH_SIZE),
     });
   } catch (err) {
-    console.error("Bulk transaction error:", err);
-    res.status(500).json({
-      success: false,
-      error: "Server error",
-    });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 };

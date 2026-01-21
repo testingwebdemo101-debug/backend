@@ -1,6 +1,9 @@
+require("dotenv").config();
 const app = require('./src/app');
 const connectDB = require('./src/config/database');
 const User = require('./src/models/User');
+require("dotenv").config();
+
 
 connectDB();
 
