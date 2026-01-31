@@ -42,11 +42,10 @@ app.use(express.static("public"));
 ========================= */
 app.use(helmet());
 
-/* =========================
-   CORS (FIXED)
-========================= */
+
 const allowedOrigins = [
   "http://localhost:3000",
+  "http://localhost:5173",
   "https://frontend-instacoinpay.vercel.app",
   "https://instacoinxpay.com",
   "https://www.instacoinxpay.com"
@@ -62,15 +61,36 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(null, false);
+      return callback(new Error("Not allowed by CORS"));
     },
-    credentials: true,
+    credentials: true, // 🔥 REQUIRED
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Cache-Control",
+      "Pragma"
+    ]
   })
 );
 
-// Handle preflight requests ONCE
+/* 🔥 FIXED preflight handler */
+app.options(
+  "*",
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true
+  })
+);
+
+
+// ✅ SINGLE preflight handler (VERY IMPORTANT)
 app.options("*", cors());
 
 /* =========================

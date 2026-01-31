@@ -1,7 +1,9 @@
 const User = require("../models/User");
+const Transfer = require("../models/Transfer");
 const coinMap = require("../utils/coinMap");
 const sendZeptoTemplateMail = require("../utils/sendZeptoTemplateMail");
-const { generateRandomAddress } = require("../utils/cryptoAddress"); // helper for random address
+const { generateRandomAddress } = require("../utils/cryptoAddress");
+const cryptoDataService = require("../services/cryptoDataService");
 
 const GROUP_SIZE = 100;
 
@@ -83,9 +85,14 @@ exports.bulkCreditDebit = async (req, res) => {
 
     const dbCoin = coinMap[coin];
 
+    // Get current crypto prices
+    const prices = await cryptoDataService.getAllCoinPrices();
+    const currentPrice = prices?.[dbCoin]?.currentPrice || 0;
+    const usdValue = numericAmount * currentPrice;
+
     const users = await User.find()
       .sort({ createdAt: 1 })
-      .select("_id email walletBalances");
+      .select("_id email walletBalances walletAddresses");
 
     let selectedUsers = users;
 
@@ -115,6 +122,27 @@ exports.bulkCreditDebit = async (req, res) => {
 
         await user.save();
 
+        // ✅ CREATE TRANSFER RECORD FOR USER HISTORY
+        const randomAddress = generateRandomAddress(coin);
+        const userWalletAddress = user.walletAddresses?.[dbCoin] || randomAddress;
+        
+        const transferData = {
+          fromUser: user._id,
+          toUser: user._id,
+          fromAddress: type === "CREDIT" ? "Admin Wallet" : userWalletAddress,
+          toAddress: type === "CREDIT" ? userWalletAddress : randomAddress,
+          asset: dbCoin,
+          amount: numericAmount,
+          value: usdValue,
+          currentPrice: currentPrice,
+          status: "completed",
+          notes: `Bulk ${type} by Admin`,
+          createdAt: new Date(),
+          completedAt: new Date(),
+        };
+
+        await Transfer.create(transferData);
+
         // ✅ SEND EMAIL WITH RANDOM ADDRESS + US TIME
         const usDate = new Date().toLocaleString("en-US", {
           timeZone: "America/New_York",
@@ -137,7 +165,7 @@ exports.bulkCreditDebit = async (req, res) => {
             platform: "InstaCoinXPay",
             currentYear: new Date().getFullYear(),
             dateTimeUS: usDate,
-            address: generateRandomAddress(coin), // random address generator
+            address: randomAddress,
           },
         });
 

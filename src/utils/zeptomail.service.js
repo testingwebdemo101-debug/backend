@@ -2,19 +2,26 @@ const axios = require("axios");
 
 const sendZeptoTemplateMail = async ({ to, templateKey, mergeInfo }) => {
   try {
-    console.log("📧 Attempting to send Zepto template mail:", {
+    console.log("📧 [DEBUG] sendZeptoTemplateMail called with:", {
       to,
-      templateKey,
-      mergeInfo,
+      templateKey: templateKey ? `${templateKey.substring(0, 30)}...` : 'MISSING',
+      mergeInfoKeys: Object.keys(mergeInfo || {})
     });
 
     if (!to || !templateKey || !mergeInfo) {
-      console.error("❌ Missing email parameters");
+      console.error("❌ [DEBUG] Missing email parameters:", {
+        to: !!to,
+        templateKey: !!templateKey,
+        mergeInfo: !!mergeInfo
+      });
       return null;
     }
 
     if (!process.env.ZEPTOMAIL_API_KEY || !process.env.ZEPTOMAIL_FROM) {
-      console.error("❌ ZeptoMail env vars missing");
+      console.error("❌ [DEBUG] ZeptoMail env vars missing:", {
+        hasApiKey: !!process.env.ZEPTOMAIL_API_KEY,
+        hasFrom: !!process.env.ZEPTOMAIL_FROM
+      });
       return null;
     }
 
@@ -34,14 +41,16 @@ const sendZeptoTemplateMail = async ({ to, templateKey, mergeInfo }) => {
         {
           email_address: {
             address: to,
-            name: stringMergeInfo.name || "User",
+            name: stringMergeInfo.userName || "User",
           },
         },
       ],
       merge_info: stringMergeInfo,
     };
 
-    const res = await axios.post(
+    console.log("📤 [DEBUG] Sending to ZeptoMail API...");
+    
+    const response = await axios.post(
       "https://api.zeptomail.in/v1.1/email/template",
       payload,
       {
@@ -49,18 +58,26 @@ const sendZeptoTemplateMail = async ({ to, templateKey, mergeInfo }) => {
           Authorization: process.env.ZEPTOMAIL_API_KEY,
           "Content-Type": "application/json",
         },
-        timeout: 10000,
+        timeout: 15000,
       }
     );
 
-    console.log("✅ ZEPTOMAIL SENT:", res.data);
-    return res.data;
-  } catch (err) {
-    console.error("❌ ZEPTOMAIL ERROR:", {
-      status: err.response?.status,
-      message: err.response?.data,
+    console.log("✅ [DEBUG] ZeptoMail API Response:", {
+      status: response.status,
+      messageId: response.data?.data?.[0]?.message_id || 'Unknown'
     });
-    return null; // ⛔ DO NOT THROW
+    
+    return response.data;
+    
+  } catch (error) {
+    console.error("❌ [DEBUG] ZeptoMail API Error:", {
+      message: error.message,
+      status: error.response?.status,
+      errorDetails: error.response?.data,
+      url: error.config?.url
+    });
+    
+    return null;
   }
 };
 

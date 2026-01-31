@@ -61,7 +61,19 @@ walletBalances: {
     doge: { type: Number, default: 0 },
     ltc: { type: Number, default: 0 }
 },
-
+// Add these fields to your User model
+transferOTP: {
+    type: String,
+    default: null
+},
+transferOTPExpires: {
+    type: Date,
+    default: null
+},
+pendingTransferData: {
+    type: Object,
+    default: null
+},
     
     fullName: {
         type: String,
@@ -272,6 +284,7 @@ UserSchema.methods.isResetTokenValid = function(token) {
     
     return isTokenValid && isNotExpired;
 };
+
 
 // Method to validate wallet address format
 UserSchema.methods.validateWalletAddress = function(asset, address) {

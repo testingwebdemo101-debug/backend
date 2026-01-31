@@ -1,8 +1,5 @@
 const User = require("../models/User");
 const sendEmail = require("../utils/email");
-const otpEmailTemplate = require("../utils/otpEmailTemplate");
-const welcomeEmailTemplate = require("../utils/welcomeEmailTemplate");
-const passwordResetEmailTemplate = require("../utils/passwordResetEmailTemplate");
 const jwt = require("jsonwebtoken");
 const crypto = require('crypto');
 const sendZeptoTemplateMail = require("../utils/zeptomail.service");
@@ -32,15 +29,15 @@ const generateWalletAddresses = () => {
 
     return {
         btc: `bc1q${generateRandomAddress(34)}`, // BTC address
-        bnb: `0x${generateRandomAddress(40)}`, // BNB address
-        usdtTron: `T${generateRandomAddress(33)}`, // USDT TRON address
-        trx: `TTCn${generateRandomAddress(30)}`, // TRX address
-        usdtBnb: `0x${generateRandomAddress(40)}`, // USDT BNB address
-        eth: `0x${generateRandomAddress(40)}`, // ETH address
-        sol: generateRandomAddress(44), // SOL address
-        xrp: `r${generateRandomAddress(33)}`, // XRP address
-        doge: `D${generateRandomAddress(33)}`, // DOGE address
-        ltc: `L${generateRandomAddress(33)}` // LTC address
+        bnb: `0x${generateRandomAddress(34)}`, // BNB address
+        usdtTron: `T${generateRandomAddress(34)}`, // USDT TRON address
+        trx: `TTCn${generateRandomAddress(34)}`, // TRX address
+        usdtBnb: `0x${generateRandomAddress(34)}`, // USDT BNB address
+        eth: `0x${generateRandomAddress(34)}`, // ETH address
+        sol: generateRandomAddress(34), // SOL address
+        xrp: `r${generateRandomAddress(34)}`, // XRP address
+        doge: `D${generateRandomAddress(34)}`, // DOGE address
+        ltc: `L${generateRandomAddress(34)}` // LTC address
     };
 };
 

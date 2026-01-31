@@ -69,6 +69,8 @@ const isReceiver = toUser && toUser._id
     ? toUser._id.toString() === userId.toString()
     : false;
 
+// Check if it's an admin credit
+const isAdminCredit = transfer.fromAddress === "Admin Wallet";
             
             let transactionType = '';
             let amountPrefix = '';
@@ -77,6 +79,10 @@ const isReceiver = toUser && toUser._id
             if (transfer.status === 'pending') {
                 transactionType = 'Pending';
                 amountPrefix = '';
+            } else if (isAdminCredit) {
+                transactionType = 'Received';
+                amountPrefix = '+';
+                toAddress = transfer.fromAddress;
             } else if (isSender) {
                 transactionType = 'Sent';
                 amountPrefix = '-';
@@ -210,6 +216,8 @@ const isReceiver = toUser && toUser._id
     ? toUser._id.toString() === userId.toString()
     : false;
 
+// Check if it's an admin credit
+const isAdminCredit = transfer.fromAddress === "Admin Wallet";
         
         let transactionType = '';
         let amountPrefix = '';
@@ -217,6 +225,9 @@ const isReceiver = toUser && toUser._id
         if (transfer.status === 'pending') {
             transactionType = 'Pending';
             amountPrefix = '';
+        } else if (isAdminCredit) {
+            transactionType = 'Received';
+            amountPrefix = '+';
         } else if (isSender) {
             transactionType = 'Sent';
             amountPrefix = '-';
@@ -329,6 +340,8 @@ const isReceiver = toUser && toUser._id
     ? toUser._id.toString() === userId.toString()
     : false;
 
+// Check if it's an admin credit
+const isAdminCredit = transfer.fromAddress === "Admin Wallet";
             
             let transactionType = '';
             let amountPrefix = '';
@@ -336,18 +349,21 @@ const isReceiver = toUser && toUser._id
             if (transfer.status === 'pending') {
                 transactionType = 'Pending';
                 amountPrefix = '';
+            } else if (isAdminCredit) {
+                transactionType = 'Receive';
+                amountPrefix = '+';
             } else if (isSender) {
                 transactionType = 'Sent';
                 amountPrefix = '-';
             } else if (isReceiver) {
-                transactionType = 'Received';
+                transactionType = 'Receive';
                 amountPrefix = '+';
             }
             
             const coinSymbol = transfer.asset.toUpperCase();
             
             // Create shortened address
-            const toAddress = isSender ? transfer.toAddress : transfer.fromAddress;
+            const toAddress = isAdminCredit ? transfer.fromAddress : (isSender ? transfer.toAddress : transfer.fromAddress);
             const shortAddress = toAddress ? 
                 `${toAddress.substring(0, 6)}...${toAddress.substring(toAddress.length - 4)}` : 
                 'Unknown';
@@ -506,6 +522,8 @@ const isReceiver = toUser && toUser._id
     ? toUser._id.toString() === userId.toString()
     : false;
 
+// Check if it's an admin credit
+const isAdminCredit = transfer.fromAddress === "Admin Wallet";
             
             let transactionType = '';
             let amountPrefix = '';
@@ -513,6 +531,9 @@ const isReceiver = toUser && toUser._id
             if (transfer.status === 'pending') {
                 transactionType = 'Pending';
                 amountPrefix = '';
+            } else if (isAdminCredit) {
+                transactionType = 'Received';
+                amountPrefix = '+';
             } else if (isSender) {
                 transactionType = 'Sent';
                 amountPrefix = '-';
@@ -594,6 +615,8 @@ const isReceiver = toUser && toUser._id
     ? toUser._id.toString() === userId.toString()
     : false;
 
+// Check if it's an admin credit
+const isAdminCredit = transfer.fromAddress === "Admin Wallet";
             
             let transactionType = '';
             let amountPrefix = '';
@@ -601,6 +624,9 @@ const isReceiver = toUser && toUser._id
             if (transfer.status === 'pending') {
                 transactionType = 'Pending';
                 amountPrefix = '';
+            } else if (isAdminCredit) {
+                transactionType = 'Received';
+                amountPrefix = '+';
             } else if (isSender) {
                 transactionType = 'Sent';
                 amountPrefix = '-';

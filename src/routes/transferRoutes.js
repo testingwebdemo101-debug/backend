@@ -1,4 +1,4 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 const Transfer = require("../models/Transfer");
 const {
@@ -7,13 +7,22 @@ const {
   getTransferById,
   validateWalletAddress,
   getTransferSummary,
-  getWalletBalance
+  getWalletBalance,
+  verifyTransferOTPWithId,
+  resendTransferOTPWithId
 } = require('../controllers/transferController');
 const { protect } = require('../middleware/auth');
 
+// ✅ 1️⃣ LET PREFLIGHT PASS
+router.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 /**
- * ✅ PUBLIC ROUTE (NO AUTH)
- * GET /api/transfer/all
+ * ✅ PUBLIC ROUTE
  */
 router.get("/all", async (req, res) => {
   try {
@@ -35,9 +44,7 @@ router.get("/all", async (req, res) => {
   }
 });
 
-/**
- * 🔒 PROTECTED ROUTES (AUTH REQUIRED)
- */
+// 🔒 2️⃣ PROTECT ONLY REAL REQUESTS
 router.use(protect);
 
 router.post('/', createTransfer);
@@ -46,5 +53,7 @@ router.get('/summary', getTransferSummary);
 router.get('/validate', validateWalletAddress);
 router.get('/balance', getWalletBalance);
 router.get('/:id', getTransferById);
+router.post('/verify-otp', verifyTransferOTPWithId);
+router.post('/resend-otp', resendTransferOTPWithId);
 
 module.exports = router;

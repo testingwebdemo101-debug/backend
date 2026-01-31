@@ -58,7 +58,7 @@ exports.createSingleUser = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "User created with wallets",
+      message: "Account created successfully! 🎉",
       data: user
     });
 

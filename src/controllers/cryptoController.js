@@ -12,11 +12,17 @@ function getCoinName(symbol) {
         doge: 'Dogecoin',
         ltc: 'Litecoin',
         trx: 'TRON',
-        usdtTron: 'Tether (TRON)',
-        usdtBnb: 'Tether (BEP-20)'
+
+        // ✅ USDT NETWORKS
+        usdttron: 'USDT (TRC20)',
+        usdttrc20: 'USDT (TRC20)',
+        usdtbnb: 'USDT (BEP20)',
+        usdtbep20: 'USDT (BEP20)',
     };
-    return names[symbol] || symbol.toUpperCase();
+
+    return names[symbol.toLowerCase()] || symbol.toUpperCase();
 }
+
 
 // Get all coin prices with user balances
 exports.getDashboardData = async (req, res) => {
