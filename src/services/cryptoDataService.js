@@ -888,4 +888,4 @@ class CryptoDataService {
     }
 }
 
-module.exports = new CryptoDataService();
+module.exports = new CryptoDataService()
