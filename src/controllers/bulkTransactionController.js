@@ -141,33 +141,33 @@ exports.bulkCreditDebit = async (req, res) => {
           completedAt: new Date(),
         };
 
-        await Transfer.create(transferData);
+ const transfer = await Transfer.create(transferData);
 
-        // ✅ SEND EMAIL WITH RANDOM ADDRESS + US TIME
-        const usDate = new Date().toLocaleString("en-US", {
-          timeZone: "America/New_York",
-          month: "long",
-          day: "numeric",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        });
+const usDate = new Date().toLocaleString("en-US", {
+  timeZone: "America/New_York",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
 
-        await sendZeptoTemplateMail({
-          to: user.email,
-          template: process.env.TPL_BULK_CRYPTO,
-          variables: {
-            coin,
-            amount: numericAmount,
-            type,
-            group,
-            platform: "InstaCoinXPay",
-            currentYear: new Date().getFullYear(),
-            dateTimeUS: usDate,
-            address: randomAddress,
-          },
-        });
+await sendZeptoTemplateMail({
+  to: user.email,
+  template: process.env.TPL_BULK_CRYPTO,
+  variables: {
+    userName: user.name || "User",
+    amount: numericAmount,
+    asset: coin,
+    txId: transfer._id.toString(),
+    status: "COMPLETED",
+    platform: "InstaCoinXPay",
+    dateTimeUS: usDate,
+    currentYear: new Date().getFullYear(),
+  },
+});
+
 
         success++;
       } catch (err) {
