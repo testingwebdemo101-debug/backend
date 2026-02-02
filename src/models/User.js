@@ -100,12 +100,16 @@ pendingTransferData: {
         type: String,
         required: true
     },
-    referralCode: {
-        type: String,
-    },
-    referredBy: {
-        type: String
-    },
+   referralCode: {
+    type: String,
+    unique: true,
+    index: true
+},
+referredBy: {
+    type: String,
+    default: null
+},
+
     verificationCode: {
         type: String
     },

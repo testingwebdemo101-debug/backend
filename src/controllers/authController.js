@@ -3,6 +3,8 @@ const sendEmail = require("../utils/email");
 const jwt = require("jsonwebtoken");
 const crypto = require('crypto');
 const sendZeptoTemplateMail = require("../utils/zeptomail.service");
+const ReferralReward = require("../models/ReferralReward");
+
 
 
 /* ===============================
@@ -83,7 +85,23 @@ exports.getStarted = async (req, res, next) => {
 ================================ */
 exports.register = async (req, res, next) => {
   try {
-    const { fullName, email, password, country, referralCode: referredBy } = req.body;
+    let { fullName, email, password, country, referralCode: referredBy } = req.body;
+
+// ✅ HANDLE FULL REFERRAL URL OR CODE
+if (referredBy && referredBy.includes("referralCode=")) {
+  try {
+    const url = new URL(referredBy);
+    referredBy = url.searchParams.get("referralCode");
+  } catch (e) {
+    referredBy = referredBy.split("referralCode=").pop();
+  }
+}
+
+// ✅ FINAL CLEANUP
+if (referredBy) {
+  referredBy = referredBy.trim().toUpperCase();
+}
+
 
     // 1️⃣ User exists check
     const existingUser = await User.findOne({ email });
@@ -168,6 +186,60 @@ exports.verifyEmail = async (req, res) => {
     user.verificationCodeExpire = undefined;
     await user.save();
 
+   // ===============================
+// REFERRAL REWARD (AFTER VERIFY)
+// ===============================
+if (user.referredBy) {
+  console.log("🎯 Referral detected:", user.referredBy);
+
+  const referrer = await User.findOne({
+    referralCode: user.referredBy
+  });
+
+  if (!referrer) {
+    console.log("❌ Referrer not found");
+  } else {
+    const alreadyRewarded = await ReferralReward.findOne({
+      referredEmail: user.email
+    });
+
+    if (alreadyRewarded) {
+      console.log("⚠️ Referral already rewarded");
+    } else {
+      // ✅ ENSURE WALLET STRUCTURE EXISTS
+      if (!referrer.walletBalances) referrer.walletBalances = {};
+      if (!user.walletBalances) user.walletBalances = {};
+
+      referrer.walletBalances.usdtBnb =
+        referrer.walletBalances.usdtBnb || 0;
+
+      user.walletBalances.usdtBnb =
+        user.walletBalances.usdtBnb || 0;
+
+      // ✅ CREDIT BOTH USERS
+      referrer.walletBalances.usdtBnb += 25;
+      user.walletBalances.usdtBnb += 25;
+
+      await referrer.save();
+      await user.save();
+
+      await ReferralReward.create({
+        referrerEmail: referrer.email,
+        referredEmail: user.email,
+        amount: 25,
+        currency: "usdtBnb"
+      });
+
+      console.log("💰 Referral bonus credited:", {
+        referrer: referrer.email,
+        referred: user.email,
+        amount: 25
+      });
+    }
+  }
+}
+
+
     // ✅ SEND WELCOME MAIL (ONLY AFTER VERIFY)
     await sendZeptoTemplateMail({
       to: user.email,
@@ -184,12 +256,14 @@ exports.verifyEmail = async (req, res) => {
       success: true,
       message: "Email verified successfully",
       token,
-      data: {
-        id: user._id,
-        name: user.fullName,
-        email: user.email,
-        isVerified: true,
-      },
+    data: {
+  id: user._id,
+  name: user.fullName,
+  email: user.email,
+  isVerified: true,
+  referralCode: user.referralCode
+},
+
     });
   } catch (error) {
     console.error("VERIFY EMAIL ERROR 🔴", error);
