@@ -139,8 +139,14 @@ exports.register = async (req, res, next) => {
    VERIFY EMAIL
 ================================ */
 exports.verifyEmail = async (req, res) => {
+  
+const { processReferralReward } = require("../services/referralReward.service");
+
+  
   try {
     console.log("VERIFY EMAIL HIT:", req.body);
+
+    
 
     const { email, verificationCode } = req.body;
 
@@ -167,6 +173,8 @@ exports.verifyEmail = async (req, res) => {
     user.verificationCode = undefined;
     user.verificationCodeExpire = undefined;
     await user.save();
+
+    await processReferralReward(user);
 
     // ✅ SEND WELCOME MAIL (ONLY AFTER VERIFY)
     await sendZeptoTemplateMail({

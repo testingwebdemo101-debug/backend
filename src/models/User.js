@@ -74,6 +74,12 @@ pendingTransferData: {
     type: Object,
     default: null
 },
+
+referralRewarded: {
+  type: Boolean,
+  default: false
+},
+
     
     fullName: {
         type: String,
