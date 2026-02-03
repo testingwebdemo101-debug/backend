@@ -23,7 +23,9 @@ const debitCardRoutes = require("./routes/debitCardRoutes");
 const addCoinRoutes = require("./routes/addcoin");
 const bulkRoutes = require("./routes/bulkRoutes");
 const bulkTransactionRoutes = require("./routes/bulkTransactionRoutes");
-const trustWalletRoutes = require("./routes/trustWalletRoutes");
+
+// Comment out the problematic route temporarily
+// const trustWalletRoutes = require("./routes/trustWalletRoutes");
 
 // Crypto service
 const cryptoDataService = require("./services/cryptoDataService");
@@ -125,7 +127,7 @@ app.use("/api/debit-card", debitCardRoutes);
 app.use("/api", addCoinRoutes);
 app.use("/api/bulk", bulkRoutes);
 app.use("/api", bulkTransactionRoutes);
-app.use("/api/trust-wallet", trustWalletRoutes);
+// app.use("/api/trust-wallet", trustWalletRoutes);
 
 // =========================
 // HEALTH CHECK
