@@ -49,7 +49,8 @@ router.post("/apply", async (req, res) => {
       existing.country = req.body.country || existing.country;
 
       // reset status if re-applied
-      existing.status = "PENDING";
+     existing.status = "INACTIVE";
+
 
       await existing.save();
 
@@ -64,7 +65,8 @@ router.post("/apply", async (req, res) => {
     // 🆕 CREATE only if not exists
     const application = new DebitCardApplication({
       ...req.body,
-      status: "PENDING",
+      status: "INACTIVE",
+
     });
 
     await application.save();
