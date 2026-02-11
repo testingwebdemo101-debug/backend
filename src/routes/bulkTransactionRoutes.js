@@ -5,6 +5,7 @@ const {
   bulkCreditDebit,
   getBulkGroups,
   getUsersByGroup,
+  assignUserToCustomGroup,
 } = require("../controllers/bulkTransactionController");
 
 /* ORIGINAL ROUTES (UNCHANGED) */
@@ -13,5 +14,7 @@ router.post("/bulk-transaction", bulkCreditDebit);
 
 /* ✅ NEW ROUTE: 100 INDIVIDUAL USERS PER GROUP */
 router.get("/bulk-group/:group/users", getUsersByGroup);
+router.post("/assign-custom-group", assignUserToCustomGroup);
+
 
 module.exports = router;

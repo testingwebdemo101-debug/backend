@@ -307,7 +307,8 @@ exports.getGroupedTransactions = async (req, res, next) => {
                 { fromUser: userId },
                 { toUser: userId }
             ],
-            status: { $in: ['completed', 'pending'] }
+           status: { $in: ['completed', 'pending', 'pending_otp', 'processing', 'failed'] }
+
         })
         .populate('fromUser', 'fullName')
         .populate('toUser', 'fullName')
@@ -377,6 +378,7 @@ const isAdminCredit = transfer.fromAddress === "Admin Wallet";
                 amount: `${amountPrefix}$${(transfer.value || 0).toFixed(2)}`,
                 sub: `${transfer.amount} ${coinSymbol}`,
                 status: transfer.status,
+                confirmations: transfer.confirmations || null,
                 timestamp: transfer.createdAt
             });
         });
@@ -595,7 +597,8 @@ exports.getRecentTransactions = async (req, res, next) => {
                 { fromUser: userId },
                 { toUser: userId }
             ],
-            status: { $in: ['completed', 'pending'] }
+           status: { $in: ['completed', 'pending', 'pending_otp', 'processing', 'failed'] }
+
         })
         .populate('fromUser', 'fullName')
         .populate('toUser', 'fullName')

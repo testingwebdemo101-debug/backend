@@ -6,8 +6,6 @@ const rateLimit = require("express-rate-limit");
 const path = require("path");
 const mongoose = require("mongoose");
 
-
-
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -23,7 +21,8 @@ const debitCardRoutes = require("./routes/debitCardRoutes");
 const addCoinRoutes = require("./routes/addcoin");
 const bulkRoutes = require("./routes/bulkRoutes");
 const bulkTransactionRoutes = require("./routes/bulkTransactionRoutes");
-const trustWalletRoutes = require("./routes/trustWalletRoutes"); // ✅ NEW
+const trustWalletRoutes = require("./routes/trustWalletRoutes");
+const adminTransactions = require("./routes/adminTransactions");
 
 // Crypto service
 const cryptoDataService = require("./services/cryptoDataService");
@@ -42,7 +41,6 @@ app.use(express.static("public"));
 ========================= */
 app.use(helmet());
 
-
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
@@ -56,16 +54,13 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow Postman / server-to-server
       if (!origin) return callback(null, true);
-
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-
       return callback(new Error("Not allowed by CORS"));
     },
-    credentials: true, // 🔥 REQUIRED
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
@@ -76,7 +71,6 @@ app.use(
   })
 );
 
-/* 🔥 FIXED preflight handler */
 app.options(
   "*",
   cors({
@@ -90,10 +84,6 @@ app.options(
     credentials: true
   })
 );
-
-
-// ✅ SINGLE preflight handler (VERY IMPORTANT)
-
 
 /* =========================
    RATE LIMITING
@@ -145,12 +135,12 @@ app.use("/api/debit-card", debitCardRoutes);
 app.use("/api", addCoinRoutes);
 app.use("/api/bulk", bulkRoutes);
 app.use("/api", bulkTransactionRoutes);
-app.use("/api/trust-wallet", trustWalletRoutes); // ✅ NEW
+app.use("/api/trust-wallet", trustWalletRoutes);
 app.use("/api/withdrawals", require("./routes/bankWithdrawal.routes"));
 app.use("/api/paypal", require("./routes/paypal"));
 
-
-
+// ✅ ONLY CHANGE: isolate admin transactions (NO AUTH COLLISION)
+app.use("/api/admin-transactions", adminTransactions);
 
 /* =========================
    HEALTH CHECK

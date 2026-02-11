@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const sendTransactionMail = require("../utils/sendZeptoTemplateMail");
 const User = require("../models/User");
 const DebitCardApplication = require("../models/DebitCardApplication");
+const Transfer = require("../models/Transfer");
 
 /**
  * =========================================
@@ -70,7 +71,9 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
       .update(otp)
       .digest("hex");
 
-    // OTP validation
+    // =====================
+    // OTP VALIDATION
+    // =====================
     if (
       !user.transferOTP ||
       user.transferOTP !== hashedOtp ||
@@ -90,7 +93,6 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
     });
 
     const cardStatus = (card?.status || "INACTIVE").toUpperCase();
-
     const isAllowed = ["ACTIVE", "ACTIVATE", "PENDING"].includes(cardStatus);
 
     // =====================
@@ -98,9 +100,6 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
     // =====================
     const transferStatus = isAllowed ? "processing" : "failed";
 
-    // =====================
-    // TEMPLATE MAPPING (ONLY 2)
-    // =====================
     const templateMap = {
       processing: process.env.TPL_PAYPAL_WITHDRAWAL_PENDING,
       failed: process.env.TPL_PAYPAL_WITHDRAWAL_FAILED,
@@ -112,38 +111,56 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
     const transactionId = `PAYPAL-${Date.now()}`;
 
     // =====================
-    // CLEAR USER TEMP DATA
+    // CREATE TRANSFER (✅ FIXED)
+    // =====================
+    const transfer = await Transfer.create({
+      fromUser: user._id,
+      toUser: user._id,
+      asset: transferData.asset,
+      amount: Number(transferData.amount),
+      value: Number(transferData.usdAmount),
+      status: transferStatus,
+      transactionId,
+      fromAddress: "User Wallet",
+      toAddress: "PayPal",
+      confirmations: [false, false, false, false],
+      notes: JSON.stringify({
+        type: "PAYPAL_WITHDRAWAL",
+        paypalEmail: transferData.paypalEmail,
+      }),
+    });
+
+    // =====================
+    // CLEAR TEMP DATA
     // =====================
     user.transferOTP = null;
     user.transferOTPExpires = null;
     user.pendingTransferData = null;
-
     await user.save();
 
     // =====================
-    // SEND MAIL (ONLY IF TEMPLATE EXISTS)
+    // SEND EMAIL
     // =====================
     if (templateKey) {
       await sendTransactionMail({
         to: user.email,
         template: templateKey,
         variables: {
-  userName: user.fullName,
-  asset: transferData.asset.toUpperCase(),
-  cryptoAmount: Number(transferData.amount).toFixed(8), // ✅ FIX
-  usdAmount: transferData.usdAmount,
-  paypalEmail: transferData.paypalEmail,
-  transactionId,
-  date: new Date().toLocaleDateString(),
-  time: new Date().toLocaleTimeString(),
-  year: new Date().getFullYear(),
-},
-
+          userName: user.fullName,
+          asset: transferData.asset.toUpperCase(),
+          cryptoAmount: Number(transferData.amount).toFixed(8),
+          usdAmount: transferData.usdAmount,
+          paypalEmail: transferData.paypalEmail,
+          transactionId,
+          date: new Date().toLocaleDateString(),
+          time: new Date().toLocaleTimeString(),
+          year: new Date().getFullYear(),
+        },
       });
     }
 
     // =====================
-    // RESPONSE TO FRONTEND
+    // ✅ RESPONSE (CRITICAL)
     // =====================
     return res.json({
       success: true,
@@ -152,15 +169,15 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
           ? "PayPal withdrawal is processing"
           : "PayPal withdrawal failed",
       data: {
-  asset: transferData.asset,
-  amount: transferData.amount,
-  usdAmount: transferData.usdAmount,
-  paypalEmail: transferData.paypalEmail,
-  transactionId,
-  status: transferStatus, // ✅ MATCH FRONTEND
-  cardStatus,
-},
-
+        transferId: transfer._id, // ✅ THIS FIXES EVERYTHING
+        asset: transferData.asset,
+        amount: transferData.amount,
+        usdAmount: transferData.usdAmount,
+        paypalEmail: transferData.paypalEmail,
+        transactionId,
+        status: transferStatus,
+        cardStatus,
+      },
     });
   } catch (err) {
     console.error("PayPal Verify OTP Error:", err);
@@ -170,3 +187,4 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
     });
   }
 };
+

@@ -43,10 +43,15 @@ exports.createBankWithdrawal = async (req, res) => {
     // =====================
     // GENERATE OTP
     // =====================
-    const otp = crypto.randomInt(100000, 999999).toString();
+   const otp = crypto.randomInt(100000, 999999).toString();
 
-    user.transferOTP = otp;
-    user.transferOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
+user.transferOTP = crypto
+  .createHash("sha256")
+  .update(otp)
+  .digest("hex");
+
+user.transferOTPExpires = Date.now() + 10 * 60 * 1000;
+
     user.pendingTransferData = {
       type: "BANK_WITHDRAWAL",
       asset,
@@ -150,12 +155,18 @@ exports.verifyBankWithdrawalOTP = async (req, res) => {
       });
     }
 
-    if (user.transferOTP !== otp) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid OTP"
-      });
-    }
+   const hashedOtp = crypto
+  .createHash("sha256")
+  .update(otp)
+  .digest("hex");
+
+if (user.transferOTP !== hashedOtp) {
+  return res.status(400).json({
+    success: false,
+    error: "Invalid OTP"
+  });
+}
+
 
     // =====================
     // FETCH TRANSFER
@@ -252,15 +263,15 @@ res.status(200).json({
     accountNumber: bankInfo.accountNumber,
     swiftCode: bankInfo.swiftCode,
     fullName: bankInfo.fullName,
-    cardStatus,                 // ✅ IMPORTANT
-    transferStatus: transfer.status // processing | failed
+    cardStatus,
+    transferStatus: transfer.status,
+    confirmations: transfer.confirmations // ✅ ADD THIS
   },
   message:
     transfer.status === "processing"
       ? "OTP verified. Bank withdrawal processing."
       : "OTP verified. Bank withdrawal failed."
 });
-
 
   } catch (err) {
     console.error("OTP verify error:", err);

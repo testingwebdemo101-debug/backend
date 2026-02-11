@@ -52,6 +52,12 @@ const TransferSchema = new mongoose.Schema({
   default: 'pending'
 },
 
+confirmations: {
+  type: [Boolean],
+  default: [false, false, false, false]
+},
+
+
   transactionId: {
     type: String,
     unique: true

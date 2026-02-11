@@ -590,17 +590,46 @@ exports.login = async (req, res, next) => {
 ================================ */
 exports.getAllUsers = async (req, res, next) => {
     try {
-        const users = await User.find().select('-password -verificationCode -verificationCodeExpire -resetPasswordToken -resetPasswordExpire');
-        
+        const users = await User.find()
+            .sort({ createdAt: 1 })
+            .select('-password -verificationCode -verificationCodeExpire -resetPasswordToken -resetPasswordExpire');
+
+        const GROUP_SIZE = 100;
+
+        let autoIndex = 0;
+
+        const processedUsers = users.map((user) => {
+            let bulkGroup = null;
+
+            const isAutoUser =
+                user.group === null ||
+                user.group === undefined ||
+                user.group === "";
+
+            if (isAutoUser) {
+                bulkGroup = `AUTO-${Math.floor(autoIndex / GROUP_SIZE) + 1}`;
+                autoIndex++;
+            } else {
+                bulkGroup = `CUSTOM-${user.group}`;
+            }
+
+            return {
+                ...user.toObject(),
+                bulkGroup
+            };
+        });
+
         res.status(200).json({
             success: true,
-            count: users.length,
-            data: users
+            count: processedUsers.length,
+            data: processedUsers
         });
     } catch (error) {
         next(error);
     }
 };
+
+
 
 // Get user wallet balance (add to existing authController)
 exports.getUserWallet = async (req, res, next) => {

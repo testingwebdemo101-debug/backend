@@ -115,8 +115,11 @@ referredBy: {
     type: String,
     default: null
 },
-
-    verificationCode: {
+group: {
+  type: String,
+  default: null
+},
+ verificationCode: {
         type: String
     },
     verificationCodeExpire: {
