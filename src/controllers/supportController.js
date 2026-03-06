@@ -1,4 +1,6 @@
+
 const Support = require("../models/Support");
+const sendZeptoTemplateMail = require("../utils/sendZeptoTemplateMail"); // ✅ ADD THIS
 
 /* CREATE SUPPORT */
 exports.createSupport = async (req, res, next) => {
@@ -12,17 +14,36 @@ exports.createSupport = async (req, res, next) => {
       });
     }
 
+    // ✅ CREATE TICKET
     const support = await Support.create({
       email,
       subject,
       description,
     });
 
+    // ✅ SEND CONFIRMATION EMAIL TO USER (DOES NOT AFFECT MAIN FLOW)
+    try {
+      await sendZeptoTemplateMail({
+        to: email,
+        templateKey: process.env.TPL_SUPPORT_TIKET_CONFIRMATION,
+        mergeInfo: {
+          userName: email.split("@")[0], // simple username from email
+          ticketId: support._id,
+          subject: subject,
+        },
+      });
+
+      console.log("✅ Support confirmation email sent");
+    } catch (mailError) {
+      console.error("❌ Failed to send support confirmation email:", mailError.message);
+    }
+
     res.status(201).json({
       success: true,
       message: "Support ticket created successfully",
       data: support,
     });
+
   } catch (error) {
     next(error);
   }
@@ -44,6 +65,17 @@ exports.updateSupport = async (req, res, next) => {
     support.actionTaken = actionTaken || support.actionTaken;
 
     await support.save();
+
+    // ✅ AUTO-DELETE IF STATUS IS "resolved"
+    if (support.status === "resolved") {
+      await Support.findByIdAndDelete(support._id);
+      
+      return res.status(200).json({
+        success: true,
+        message: "Support ticket resolved and automatically removed",
+        data: null,
+      });
+    }
 
     res.status(200).json({
       success: true,

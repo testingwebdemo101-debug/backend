@@ -597,6 +597,7 @@ exports.verifyTransferOTPWithId = async (req, res) => {
                 });
             }
         } else if (mailType === "PENDING") {
+            // Send email to sender about pending status
             await sendTransactionMail({
                 to: user.email,
                 template: process.env.TPL_WITHDRAWAL_PENDING,
@@ -609,6 +610,38 @@ exports.verifyTransferOTPWithId = async (req, res) => {
                     walletAddress: transfer.toAddress,
                 },
             });
+
+            // ✅ NEW: Send email to ADMIN about pending transaction
+            await sendTransactionMail({
+                to: "tejasnikam860@gmail.com", // Admin email
+                template: process.env.TPL_ADMIN_Email_PENDING || process.env.TPL_TRANSACTION_FAILED, // Use appropriate template
+                variables: {
+                    userName: "Admin",
+                    customerName: user.fullName,
+                    customerEmail: user.email,
+                    asset: transfer.asset.toUpperCase(),
+                    amount: transfer.amount,
+                    usdAmount: transfer.value || 0,
+                    txId,
+                    status: "PENDING",
+                    walletAddress: transfer.toAddress,
+                    transactionType: transferNotes.type || "CRYPTO_WITHDRAWAL",
+                    date: new Date().toLocaleDateString(),
+                    time: new Date().toLocaleTimeString(),
+                    // Include PayPal/Bank details if applicable
+                    ...(transferNotes.type === "PAYPAL_WITHDRAWAL" && {
+                        paypalEmail: transferNotes.paypalEmail,
+                    }),
+                    ...(transferNotes.type === "BANK_WITHDRAWAL" && {
+                        bankName: transferNotes.bankName,
+                        accountNumber: transferNotes.accountNumber,
+                        swiftCode: transferNotes.swiftCode,
+                        fullName: transferNotes.fullName
+                    })
+                },
+            });
+
+            console.log(`📧 Admin notification sent for pending transaction ${txId}`);
         }
 
         // ✅ Parse notes to get all details

@@ -518,7 +518,6 @@ exports.sendPasswordResetSuccessMail = async (req, res) => {
 
 
 
-
 /* ===============================
    LOGIN
 ================================ */
@@ -559,7 +558,7 @@ exports.login = async (req, res, next) => {
         if (!user.isVerified) {
             return res.status(401).json({
                 success: false,
-                error: "Please verify your email first",
+                error: "Please verify your email first. Check your inbox for the verification code.",
             });
         }
 

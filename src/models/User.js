@@ -79,7 +79,10 @@ referralRewarded: {
   type: Boolean,
   default: false
 },
-
+ lastSpinTime: {
+    type: Date,
+    default: null
+  },
     
     fullName: {
         type: String,

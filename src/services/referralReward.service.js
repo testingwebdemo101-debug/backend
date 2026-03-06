@@ -1,3 +1,5 @@
+// referralReward.service.js
+
 const User = require("../models/User");
 const Transfer = require("../models/Transfer");
 const ReferralReward = require("../models/ReferralReward");
@@ -106,6 +108,16 @@ exports.processReferralReward = async (newUser) => {
 
   if (!referrer) return;
 
+  // ✅ FIX: Check if referral reward already exists for this email
+  const existingReward = await ReferralReward.findOne({
+    referredEmail: newUser.email
+  });
+
+  if (existingReward) {
+    console.log(`Referral reward already exists for email: ${newUser.email}`);
+    return;
+  }
+
   const REWARD_AMOUNT = 50;
 
   referrer.walletBalances[REWARD_ASSET] += REWARD_AMOUNT;
@@ -118,17 +130,27 @@ exports.processReferralReward = async (newUser) => {
 
   await newUser.save();
 
-  await ReferralReward.create({
+  // ✅ FIX: Use try-catch to handle any potential duplicate key errors
+  try {
+    await ReferralReward.create({
 
-    referrerEmail: referrer.email,
+      referrerEmail: referrer.email,
 
-    referredEmail: newUser.email,
+      referredEmail: newUser.email,
 
-    amount: REWARD_AMOUNT,
+      amount: REWARD_AMOUNT,
 
-    currency: REWARD_ASSET
+      currency: REWARD_ASSET
 
-  });
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      console.log(`Duplicate referral reward prevented for email: ${newUser.email}`);
+      // Continue with transfers even if reward record already exists
+    } else {
+      throw error; // Re-throw other errors
+    }
+  }
 
   const referrerTx = generateTxHash();
 

@@ -1,5 +1,9 @@
 const Report = require("../models/Report");
+const sendZeptoTemplateMail = require("../utils/sendZeptoTemplateMail");
 
+/* ===============================
+   CREATE REPORT (USER)
+================================ */
 /* ===============================
    CREATE REPORT (USER)
 ================================ */
@@ -18,14 +22,33 @@ exports.createReport = async (req, res, next) => {
       userEmail,
       reportedEmail,
       description,
-      attachment: null // image optional – not handled
+      attachment: null
     });
+
+    // ✅ SEND CONFIRMATION EMAIL
+    try {
+      await sendZeptoTemplateMail({
+        to: userEmail,
+        templateKey: process.env.TPL_REPORT_TIKET_CONFIRMATION,
+        mergeInfo: {
+          userName: userEmail.split("@")[0],
+          ticketId: report._id,
+          subject: `Report against ${reportedEmail}`,
+          currentYear: new Date().getFullYear()
+        }
+      });
+
+      console.log("✅ Report confirmation email sent");
+    } catch (mailError) {
+      console.error("❌ Failed to send report email:", mailError.message);
+    }
 
     res.status(201).json({
       success: true,
       message: "Report submitted successfully",
       data: report
     });
+
   } catch (error) {
     next(error);
   }
@@ -81,10 +104,13 @@ exports.resolveReport = async (req, res, next) => {
       });
     }
 
+    // ✅ AUTO-DELETE AFTER RESOLVED
+    await Report.findByIdAndDelete(report._id);
+
     res.status(200).json({
       success: true,
-      message: "Report resolved successfully",
-      data: report
+      message: "Report resolved and automatically removed",
+      data: null
     });
   } catch (error) {
     next(error);

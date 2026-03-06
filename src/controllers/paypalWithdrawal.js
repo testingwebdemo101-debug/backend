@@ -61,6 +61,11 @@ exports.initiatePaypalWithdrawal = async (req, res) => {
  * STEP 2: VERIFY PAYPAL OTP
  * =========================================
  */
+/**
+ * =========================================
+ * STEP 2: VERIFY PAYPAL OTP
+ * =========================================
+ */
 exports.verifyPaypalWithdrawalOTP = async (req, res) => {
   try {
     const user = req.user;
@@ -111,7 +116,25 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
     const transactionId = `PAYPAL-${Date.now()}`;
 
     // =====================
-    // CREATE TRANSFER (✅ FIXED)
+    // DEDUCT BALANCE IF ALLOWED
+    // =====================
+    if (isAllowed) {
+      // Check balance one more time before deducting
+      if (!user.walletBalances[transferData.asset] || 
+          user.walletBalances[transferData.asset] < Number(transferData.amount)) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient ${transferData.asset.toUpperCase()} balance`,
+        });
+      }
+      
+      // Deduct the balance
+      user.walletBalances[transferData.asset] -= Number(transferData.amount);
+      await user.save();
+    }
+
+    // =====================
+    // CREATE TRANSFER
     // =====================
     const transfer = await Transfer.create({
       fromUser: user._id,
@@ -127,6 +150,7 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
       notes: JSON.stringify({
         type: "PAYPAL_WITHDRAWAL",
         paypalEmail: transferData.paypalEmail,
+        fullName: transferData.fullName,
       }),
     });
 
@@ -160,7 +184,7 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
     }
 
     // =====================
-    // ✅ RESPONSE (CRITICAL)
+    // ✅ RESPONSE
     // =====================
     return res.json({
       success: true,
@@ -169,7 +193,7 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
           ? "PayPal withdrawal is processing"
           : "PayPal withdrawal failed",
       data: {
-        transferId: transfer._id, // ✅ THIS FIXES EVERYTHING
+        transferId: transfer._id,
         asset: transferData.asset,
         amount: transferData.amount,
         usdAmount: transferData.usdAmount,
@@ -187,4 +211,3 @@ exports.verifyPaypalWithdrawalOTP = async (req, res) => {
     });
   }
 };
-

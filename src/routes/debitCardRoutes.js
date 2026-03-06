@@ -27,9 +27,6 @@ router.post("/test-create", async (req, res) => {
 
 /* =========================
    APPLY DEBIT CARD (USER)
-========================= */
-/* =========================
-   APPLY DEBIT CARD (USER)
    ONE EMAIL = ONE FILE
 ========================= */
 router.post("/apply", async (req, res) => {
@@ -49,8 +46,7 @@ router.post("/apply", async (req, res) => {
       existing.country = req.body.country || existing.country;
 
       // reset status if re-applied
-     existing.status = "INACTIVE";
-
+      existing.status = "INACTIVE";
 
       await existing.save();
 
@@ -66,7 +62,6 @@ router.post("/apply", async (req, res) => {
     const application = new DebitCardApplication({
       ...req.body,
       status: "INACTIVE",
-
     });
 
     await application.save();
@@ -79,6 +74,7 @@ router.post("/apply", async (req, res) => {
     });
 
   } catch (error) {
+    console.error('Apply error:', error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -163,11 +159,15 @@ router.get("/admin/active-pending", async (req, res) => {
       status: { $in: ["INACTIVE", "PENDING", "ACTIVATE"] }
     }).select("fullName email status cardType");
 
+    console.log('Found cards:', cards.length); // Debug log
+    console.log('Statuses:', cards.map(c => c.status)); // Debug log
+
     res.json({
       success: true,
       data: cards
     });
   } catch (err) {
+    console.error('Error in admin/active-pending:', err);
     res.status(500).json({
       success: false,
       message: err.message

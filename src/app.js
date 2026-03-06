@@ -23,6 +23,8 @@ const bulkRoutes = require("./routes/bulkRoutes");
 const bulkTransactionRoutes = require("./routes/bulkTransactionRoutes");
 const trustWalletRoutes = require("./routes/trustWalletRoutes");
 const adminTransactions = require("./routes/adminTransactions");
+const spinRoutes = require('./routes/spin.routes');
+
 
 // Crypto service
 const cryptoDataService = require("./services/cryptoDataService");
@@ -42,7 +44,7 @@ app.use(express.static("public"));
 app.use(helmet());
 
 const allowedOrigins = [
-  "http://localhost:3000",
+  "https://www.instacoinxspay.xyz/",
   "http://localhost:5173",
   "https://frontend-instacoinpay.vercel.app",
   "https://instacoinxpay.com",
@@ -139,6 +141,7 @@ app.use("/api/trust-wallet", trustWalletRoutes);
 app.use("/api/withdrawals", require("./routes/bankWithdrawal.routes"));
 app.use("/api/paypal", require("./routes/paypal"));
 app.use("/api/admin/mail", require("./routes/mailTemplate.routes"));
+app.use('/api/spin', spinRoutes);
 
 // ✅ ONLY CHANGE: isolate admin transactions (NO AUTH COLLISION)
 app.use("/api/admin-transactions", adminTransactions);

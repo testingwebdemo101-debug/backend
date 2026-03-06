@@ -1,5 +1,7 @@
 const Transfer = require("../models/Transfer");
-const User = require("../models/User");  // ✅ IMPORT ADDED - THIS FIXES THE ERROR
+const User = require("../models/User");
+const sendTransactionMail = require("../utils/zeptomail.service");
+
 
 /**
  * =====================
@@ -18,29 +20,28 @@ exports.getPendingTransactions = async (req, res) => {
       let parsedNotes = {};
       try {
         parsedNotes = JSON.parse(tx.notes || "{}");
-      } catch (e) {}
+      } catch {}
 
-      /* =========================
-         METHOD DETECTION
-      ========================== */
-      let method = "Crypto Coin";
-
-      if (parsedNotes.type === "BANK_WITHDRAWAL") {
+      let method = "Crypto";
+      if (parsedNotes.type === "BANK_WITHDRAWAL")
         method = "Bank Transfer";
-      } else if (parsedNotes.type === "PAYPAL_WITHDRAWAL") {
+      else if (parsedNotes.type === "PAYPAL_WITHDRAWAL")
         method = "Paypal";
-      }
 
       return {
         id: tx._id,
         name: tx.fromUser?.fullName || "—",
         email: tx.fromUser?.email || "—",
-        amount: `$${tx.value || 0}`,
+        amount: tx.amount,
+        asset: tx.asset,
         method,
         txid: tx.transactionId || tx._id,
-        confirmations: tx.confirmations?.length
-          ? tx.confirmations
-          : [false, false, false, false],
+        // ✅ ADD THIS LINE - Include the recipient's crypto address
+        toAddress: tx.toAddress || "—",
+        confirmations:
+          tx.confirmations?.length
+            ? tx.confirmations
+            : [false, false, false, false],
         date: tx.createdAt.toISOString().split("T")[0],
         time: tx.createdAt.toTimeString().slice(0, 5),
       };
@@ -50,9 +51,8 @@ exports.getPendingTransactions = async (req, res) => {
       success: true,
       data,
     });
-
   } catch (err) {
-    console.error("Admin pending tx error:", err);
+    console.error(err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch pending transactions",
@@ -62,7 +62,7 @@ exports.getPendingTransactions = async (req, res) => {
 
 /**
  * =====================
- * APPROVE / REJECT / PENDING TRANSACTION
+ * UPDATE TRANSACTION STATUS
  * =====================
  */
 exports.updateTransactionStatus = async (req, res) => {
@@ -70,105 +70,163 @@ exports.updateTransactionStatus = async (req, res) => {
     const { id } = req.params;
     const { status, confirmations } = req.body;
 
-    if (!["pending", "approved", "rejected"].includes(status)) {
+    if (!["pending", "approved", "rejected"].includes(status))
       return res.status(400).json({
         success: false,
-        message: "Invalid status",
+        message: "Invalid status"
       });
-    }
 
-    const tx = await Transfer.findById(id);
+    const tx = await Transfer.findById(id).populate("fromUser");
 
-    if (!tx) {
+    if (!tx)
       return res.status(404).json({
         success: false,
-        message: "Transaction not found",
+        message: "Transaction not found"
       });
-    }
 
-    if (["completed", "failed"].includes(tx.status)) {
+    if (["completed", "failed"].includes(tx.status))
       return res.status(400).json({
         success: false,
-        message: "Transaction already finalized",
+        message: "Already finalized"
       });
-    }
 
-    // =========================
-    // PENDING → SAVE CONFIRMATIONS
-    // =========================
+    const user = tx.fromUser;
+
+    /**
+     * CONFIRMATION COUNT
+     */
+    const confirmationCount = confirmations?.filter(Boolean).length || 0;
+
+    /**
+     * METHOD & NOTES PARSING
+     */
+    let parsedNotes = {};
+    try {
+      parsedNotes = JSON.parse(tx.notes || "{}");
+    } catch {}
+
+    let method = "Crypto";
+    if (parsedNotes.type === "BANK_WITHDRAWAL")
+      method = "Bank Transfer";
+    else if (parsedNotes.type === "PAYPAL_WITHDRAWAL")
+      method = "Paypal";
+
+    /**
+     * COMMON VARIABLES
+     */
+    const commonVariables = {
+      userName: user.fullName,
+      amount: tx.amount,
+      asset: tx.asset,
+      wallet: tx.toAddress || "External Wallet",
+      txid: tx.transactionId || tx._id,
+      method,
+      confirmations: confirmationCount,
+      date: tx.createdAt.toISOString().split("T")[0],
+      time: tx.createdAt.toTimeString().slice(0, 5),
+      dashboardLink: "https://instacoinxpay.com/dashboard"
+    };
+
+    /**
+     * =====================
+     * PENDING
+     * =====================
+     */
     if (status === "pending") {
       tx.confirmations = confirmations;
       tx.status = "processing";
       await tx.save();
 
+      await sendTransactionMail({
+        to: user.email,
+        templateKey: process.env.TPL_ADMIN_TX_PENDING,
+        mergeInfo: {
+          ...commonVariables,
+          status: "Pending"
+        }
+      });
+
       return res.json({
         success: true,
-        message: "Confirmations updated (still pending)",
+        message: "Pending Mail Sent"
       });
     }
 
-    // =========================
-    // APPROVED
-    // =========================
+    /**
+     * =====================
+     * SUCCESS (APPROVED)
+     * =====================
+     */
     if (status === "approved") {
       tx.status = "completed";
       tx.completedAt = new Date();
       await tx.save();
+
+      await sendTransactionMail({
+        to: user.email,
+        templateKey: process.env.TPL_ADMIN_TX_SUCCESS,
+        mergeInfo: {
+          ...commonVariables,
+          status: "Completed"
+        }
+      });
     }
 
-    // =========================
-    // REJECTED - WITH REFUND
-    // =========================
+    /**
+     * =====================
+     * REJECT
+     * =====================
+     */
     if (status === "rejected") {
+      const refundUser = await User.findById(user._id);
 
-      // 1️⃣ Get the user who sent the transaction
-      const user = await User.findById(tx.fromUser);
-      
-      if (!user) {
-        console.log("❌ User not found for refund:", tx.fromUser);
-        return res.status(404).json({
-          success: false,
-          message: "User not found for refund",
-        });
+      if (refundUser) {
+        // Check if this is a PayPal withdrawal to refund the amount
+        if (parsedNotes.type === "PAYPAL_WITHDRAWAL") {
+          // Refund the amount back to user's balance
+          refundUser.walletBalances[tx.asset] = 
+            (refundUser.walletBalances[tx.asset] || 0) + Number(tx.amount);
+          await refundUser.save();
+
+          await sendTransactionMail({
+            to: refundUser.email,
+            templateKey: process.env.TPL_ADMIN_TX_REJECT,
+            mergeInfo: {
+              ...commonVariables,
+              status: "Rejected",
+              refundAmount: tx.amount,
+              refundAsset: tx.asset
+            }
+          });
+        } else {
+          // For other types (like bank withdrawal), maintain existing logic
+          refundUser.walletBalances[tx.asset] += Number(tx.amount);
+          await refundUser.save();
+
+          await sendTransactionMail({
+            to: refundUser.email,
+            templateKey: process.env.TPL_ADMIN_TX_REJECT,
+            mergeInfo: {
+              ...commonVariables,
+              status: "Rejected"
+            }
+          });
+        }
       }
 
-      console.log("💰 Refunding to user:", user.email);
-      console.log("  - Asset:", tx.asset);
-      console.log("  - Amount:", tx.amount);
-      console.log("  - Current balance:", user.walletBalances[tx.asset]);
-
-      // 2️⃣ Detect asset and refund amount to correct wallet
-      const assetKey = tx.asset;  // Keep original asset key (usdtTron, usdtBnb, btc, etc.)
-      
-      if (assetKey && user.walletBalances && user.walletBalances[assetKey] !== undefined) {
-        // Add the amount back to user's wallet
-        user.walletBalances[assetKey] = Number(user.walletBalances[assetKey]) + Number(tx.amount);
-        
-        // Save the updated user
-        await user.save();
-        
-        console.log("  ✅ Refund successful!");
-        console.log("  - New balance:", user.walletBalances[assetKey]);
-      } else {
-        console.log("❌ Asset key not found in wallet balances:", assetKey);
-        console.log("Available wallets:", Object.keys(user.walletBalances || {}));
-      }
-
-      // 3️⃣ Mark transaction as failed
       tx.status = "failed";
       await tx.save();
     }
 
     res.json({
       success: true,
-      message: `Transaction ${status} successfully`,
+      message: `Transaction ${status} successful`
     });
-
   } catch (err) {
-    console.error("Update tx error:", err);
+    console.error(err);
     res.status(500).json({
       success: false,
-      message: "Failed to update transaction",
+      message: "Server error"
     });
   }
 };
