@@ -25,6 +25,8 @@ const trustWalletRoutes = require("./routes/trustWalletRoutes");
 const adminTransactions = require("./routes/adminTransactions");
 const spinRoutes = require('./routes/spin.routes');
 
+// Import upload route
+const uploadRoutes = require("./routes/upload");
 
 // Crypto service
 const cryptoDataService = require("./services/cryptoDataService");
@@ -49,7 +51,7 @@ const allowedOrigins = [
   "https://frontend-instacoinpay.vercel.app",
   "https://instacoinxpay.com",
   "https://www.instacoinxpay.com",
-  "http://localhost:3000",
+  "https://instacoinxspay.xyz",
   "https://www.instacoinxspay.xyz"
 ];
 
@@ -142,6 +144,9 @@ app.use("/api/withdrawals", require("./routes/bankWithdrawal.routes"));
 app.use("/api/paypal", require("./routes/paypal"));
 app.use("/api/admin/mail", require("./routes/mailTemplate.routes"));
 app.use('/api/spin', spinRoutes);
+
+// ✅ Add upload route for Fortune Wheel images
+app.use("/api", uploadRoutes);
 
 // ✅ ONLY CHANGE: isolate admin transactions (NO AUTH COLLISION)
 app.use("/api/admin-transactions", adminTransactions);
