@@ -49,7 +49,7 @@ const allowedOrigins = [
   "https://frontend-instacoinpay.vercel.app",
   "https://instacoinxpay.com",
   "https://www.instacoinxpay.com",
-  "https://instacoinxspay.xyz",
+  "http://localhost:3000",
   "https://www.instacoinxspay.xyz"
 ];
 
